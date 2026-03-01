@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Search, Download, Sparkles } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Search, Download, Sparkles, Type as FontIcon, RefreshCw } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -16,20 +16,6 @@ interface Font {
   tags: string;
 }
 
-const translations = {
-  KO: {
-    title: "AI 폰트 스타일리스트",
-    searchPlaceholder: "어떤 느낌의 폰트를 찾으시나요? (예: 웅장한 게임 채널)",
-    analyzing: "AI가 최적의 폰트를 분석 중입니다...",
-    allFonts: "전체 폰트 목록",
-    downloadPng: "PNG 다운로드",
-    fontSize: "폰트 크기",
-    skew: "기울기",
-    fontColor: "글자 색상",
-    shadowColor: "그림자 색상"
-  }
-};
-
 const mockFonts: Font[] = [
   { id: 1, name: "노토 산스 KR", family: "'Noto Sans KR'", tags: "한글, 깔끔한, 기본" },
   { id: 2, name: "검은고딕", family: "'Black Han Sans'", tags: "한글, 제목용, 웅장한" },
@@ -43,18 +29,16 @@ const mockFonts: Font[] = [
 
 export default function App() {
   const [query, setQuery] = useState('');
-  const [fonts] = useState<Font[]>(mockFonts);
-  const [selectedFont, setSelectedFont] = useState<Font | null>(mockFonts[0]);
+  const [selectedFont, setSelectedFont] = useState<Font>(mockFonts[0]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // 스타일 상태
   const [skew, setSkew] = useState(0);
   const [color, setColor] = useState('#ffffff');
   const [shadowColor, setShadowColor] = useState('#8b5cf6');
-  const [fontSize, setFontSize] = useState(64);
-  const [previewText, setPreviewText] = useState('AI 폰트 스타일리스트');
-
-  const t = translations.KO;
+  const [fontSize, setFontSize] = useState(80);
+  const [previewText, setPreviewText] = useState('AI FONT STYLIST');
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,21 +46,42 @@ export default function App() {
     setIsAnalyzing(true);
     
     try {
-      // Vite 표준 환경변수 호출 방식으로 수정됨
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key is missing. Please check Vercel Environment Variables.");
+      if (!apiKey) throw new Error("API Key missing");
       
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
-      const prompt = `사용자의 요청: "${query}". 이 요청에 가장 잘 어울리는 폰트 스타일(색상, 그림자색 등)을 추천해줘.`;
-      const result = await model.generateContent(prompt);
-      console.log(result.response.text());
+      const prompt = `
+        사용자 요청: "${query}"
+        이 요청에 어울리는 폰트 스타일을 추천해줘. 
+        결과는 반드시 아래 JSON 형식으로만 대답해줘:
+        {
+          "color": "HEX색상코드",
+          "shadowColor": "HEX색상코드",
+          "fontSize": 숫자(40-120),
+          "skew": 숫자(-20에서 20 사이),
+          "fontIndex": 숫자(0-7 사이)
+        }
+      `;
       
-      // 데모용으로 폰트 변경 시뮬레이션
-      setSelectedFont(fonts[Math.floor(Math.random() * fonts.length)]);
+      const result = await model.generateContent(prompt);
+      const responseText = result.response.text();
+      // JSON 부분만 추출
+      const jsonMatch = responseText.match(/\{.*\}/s);
+      
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]);
+        setColor(data.color || '#ffffff');
+        setShadowColor(data.shadowColor || '#8b5cf6');
+        setFontSize(data.fontSize || 80);
+        setSkew(data.skew || 0);
+        setSelectedFont(mockFonts[data.fontIndex % mockFonts.length]);
+      }
     } catch (err) {
       console.error("AI Error:", err);
+      // 에러 시 랜덤하게라도 변경해서 피드백 제공
+      setSelectedFont(mockFonts[Math.floor(Math.random() * mockFonts.length)]);
     } finally {
       setIsAnalyzing(false);
     }
@@ -84,100 +89,175 @@ export default function App() {
 
   const downloadPng = async () => {
     if (previewRef.current) {
-      const dataUrl = await toPng(previewRef.current);
-      const link = document.createElement('a');
-      link.download = 'font-style.png';
-      link.href = dataUrl;
-      link.click();
+      try {
+        const dataUrl = await toPng(previewRef.current, { backgroundColor: '#111' });
+        const link = document.createElement('a');
+        link.download = `font-style-${Date.now()}.png`;
+        link.href = dataUrl;
+        link.click();
+      } catch (err) {
+        console.error("Download Error:", err);
+      }
     }
   };
 
   return (
-    <div className="flex h-screen w-full bg-black text-white font-sans overflow-hidden">
-      <div className="w-[40%] flex flex-col border-r border-white/10 p-6 overflow-y-auto custom-scrollbar">
-        <h1 className="text-2xl font-bold mb-6 flex items-center gap-2 neon-text">
-          <Sparkles className="w-6 h-6" /> {t.title}
-        </h1>
+    <div className="flex h-screen w-full bg-[#050505] text-white font-sans overflow-hidden">
+      {/* 왼쪽 사이드바: 컨트롤 및 리스트 */}
+      <div className="w-[380px] flex flex-col border-r border-white/10 bg-[#0a0a0a] p-6 overflow-y-auto custom-scrollbar">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="p-2 bg-purple-600 rounded-lg shadow-[0_0_15px_rgba(147,51,234,0.5)]">
+            <Sparkles className="w-6 h-6 text-white" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight italic">FONT STYLIST</h1>
+        </div>
         
-        <form onSubmit={handleSearch} className="relative mb-8">
+        <form onSubmit={handleSearch} className="relative mb-10">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-2 font-bold">AI Style Search</div>
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t.searchPlaceholder}
-            className="w-full bg-white/5 border border-white/20 rounded-lg py-3 px-4 focus:border-purple-500 outline-none"
+            placeholder="예: 웅장한 게임 채널 타이틀"
+            className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 pr-12 focus:border-purple-500/50 focus:bg-white/10 outline-none transition-all text-sm"
           />
-          <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400">
-            {isAnalyzing ? "..." : <Search className="w-5 h-5" />}
+          <button 
+            type="submit" 
+            disabled={isAnalyzing}
+            className="absolute right-3 bottom-3 p-2 text-purple-400 hover:text-purple-300 disabled:opacity-50"
+          >
+            {isAnalyzing ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
           </button>
         </form>
 
-        <div className="space-y-4">
-          <h2 className="text-xs font-bold text-white/30 uppercase tracking-widest">{t.allFonts}</h2>
-          {fonts.map(font => (
-            <button
-              key={font.id}
-              onClick={() => setSelectedFont(font)}
-              className={cn(
-                "w-full text-left p-4 rounded-xl border transition-all",
-                selectedFont?.id === font.id ? "bg-purple-500/20 border-purple-500" : "bg-white/5 border-white/10"
-              )}
-            >
-              <div className="font-bold">{font.name}</div>
-              <div className="text-xs text-white/40">{font.tags}</div>
-            </button>
-          ))}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold">Font Library</h2>
+            <span className="text-[10px] text-white/20">{mockFonts.length} Fonts</span>
+          </div>
+          
+          <div className="grid gap-3">
+            {mockFonts.map(font => (
+              <button
+                key={font.id}
+                onClick={() => setSelectedFont(font)}
+                className={cn(
+                  "group relative w-full text-left p-4 rounded-xl border transition-all duration-300",
+                  selectedFont.id === font.id 
+                    ? "bg-purple-600/10 border-purple-500/50 shadow-[0_0_20px_rgba(147,51,234,0.1)]" 
+                    : "bg-white/[0.02] border-white/5 hover:border-white/20"
+                )}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-sm tracking-tight">{font.name}</span>
+                  {selectedFont.id === font.id && <div className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />}
+                </div>
+                <div className="text-[10px] text-white/30 font-mono italic">{font.tags}</div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="w-[60%] flex flex-col">
-        <div className="flex-1 flex items-center justify-center bg-[#111] relative">
-          <div className="absolute top-6 right-6">
-            <button onClick={downloadPng} className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-lg text-sm hover:bg-white/20 transition-colors">
-              <Download className="w-4 h-4" /> {t.downloadPng}
+      {/* 오른쪽 메인: 프리뷰 및 상세 조절 */}
+      <div className="flex-1 flex flex-col bg-[#050505]">
+        {/* 프리뷰 영역 */}
+        <div className="flex-1 flex items-center justify-center p-12 relative overflow-hidden">
+          {/* 배경 장식 */}
+          <div className="absolute inset-0 opacity-20 pointer-events-none">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-600/20 rounded-full blur-[120px]" />
+          </div>
+
+          <div className="absolute top-8 right-8 z-10">
+            <button 
+              onClick={downloadPng} 
+              className="group flex items-center gap-2 px-6 py-3 bg-white text-black rounded-full text-sm font-bold hover:scale-105 active:scale-95 transition-all shadow-xl"
+            >
+              <Download className="w-4 h-4" /> DOWNLOAD PNG
             </button>
+          </div>
+
+          <div className="absolute top-8 left-8 text-[10px] tracking-[0.3em] text-white/20 font-bold uppercase">
+            Live Preview / Click text to edit
           </div>
           
           <div
             ref={previewRef}
-            className="p-10"
-            style={{
-              fontFamily: selectedFont?.family,
-              fontSize: `${fontSize}px`,
-              color: color,
-              transform: `skewX(${skew}deg)`,
-              textShadow: `0 0 15px ${shadowColor}`,
-            }}
+            className="relative z-10 w-full flex justify-center items-center py-20 px-10 transition-all duration-500 ease-out"
+            style={{ transform: `skewX(${skew}deg)` }}
           >
-            <input 
-              type="text" 
-              value={previewText} 
+            <textarea
+              value={previewText}
               onChange={(e) => setPreviewText(e.target.value)}
-              className="bg-transparent border-none outline-none text-center w-full"
-              style={{ color: 'inherit', font: 'inherit' }}
+              spellCheck={false}
+              className="bg-transparent border-none outline-none text-center w-full resize-none overflow-hidden leading-tight transition-all duration-300"
+              style={{
+                fontFamily: selectedFont.family,
+                fontSize: `${fontSize}px`,
+                color: color,
+                textShadow: `0 0 20px ${shadowColor}, 0 0 40px ${shadowColor}44`,
+                height: 'auto',
+                minHeight: '1em'
+              }}
+              rows={1}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = 'auto';
+                target.style.height = target.scrollHeight + 'px';
+              }}
             />
           </div>
         </div>
 
-        <div className="h-[40%] bg-white/5 border-t border-white/10 p-8 grid grid-cols-2 gap-8 overflow-y-auto">
-          <div className="space-y-6">
-            <div>
-              <label className="text-xs text-white/50 block mb-2">{t.fontSize} ({fontSize}px)</label>
-              <input type="range" min="20" max="150" value={fontSize} onChange={e => setFontSize(Number(e.target.value))} className="w-full accent-purple-500" />
+        {/* 하단 컨트롤 바 */}
+        <div className="h-[320px] bg-[#0a0a0a] border-t border-white/10 p-10 grid grid-cols-2 gap-16">
+          <div className="space-y-8">
+            <div className="group">
+              <div className="flex justify-between mb-3">
+                <label className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold group-hover:text-purple-400 transition-colors">Font Size</label>
+                <span className="text-[10px] font-mono text-white/60">{fontSize}px</span>
+              </div>
+              <input 
+                type="range" min="30" max="150" value={fontSize} 
+                onChange={e => setFontSize(Number(e.target.value))} 
+                className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500" 
+              />
             </div>
-            <div>
-              <label className="text-xs text-white/50 block mb-2">{t.skew} ({skew}°)</label>
-              <input type="range" min="-45" max="45" value={skew} onChange={e => setSkew(Number(e.target.value))} className="w-full accent-purple-500" />
+            <div className="group">
+              <div className="flex justify-between mb-3">
+                <label className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold group-hover:text-purple-400 transition-colors">Skew Angle</label>
+                <span className="text-[10px] font-mono text-white/60">{skew}°</span>
+              </div>
+              <input 
+                type="range" min="-30" max="30" value={skew} 
+                onChange={e => setSkew(Number(e.target.value))} 
+                className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500" 
+              />
             </div>
           </div>
-          <div className="space-y-6">
-            <div>
-              <label className="text-xs text-white/50 block mb-2">{t.fontColor}</label>
-              <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-full h-10 bg-transparent border-none cursor-pointer" />
+
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-3">
+              <label className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold">Text Color</label>
+              <div className="flex items-center gap-4 p-3 bg-white/[0.03] border border-white/5 rounded-xl">
+                <input 
+                  type="color" value={color} 
+                  onChange={e => setColor(e.target.value)} 
+                  className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-lg" 
+                />
+                <span className="text-xs font-mono text-white/40 uppercase">{color}</span>
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-white/50 block mb-2">{t.shadowColor}</label>
-              <input type="color" value={shadowColor} onChange={e => setShadowColor(e.target.value)} className="w-full h-10 bg-transparent border-none cursor-pointer" />
+            <div className="space-y-3">
+              <label className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold">Glow Color</label>
+              <div className="flex items-center gap-4 p-3 bg-white/[0.03] border border-white/5 rounded-xl">
+                <input 
+                  type="color" value={shadowColor} 
+                  onChange={e => setShadowColor(e.target.value)} 
+                  className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-lg" 
+                />
+                <span className="text-xs font-mono text-white/40 uppercase">{shadowColor}</span>
+              </div>
             </div>
           </div>
         </div>
