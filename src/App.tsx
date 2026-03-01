@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Search, Download, Sparkles, Type as FontIcon } from 'lucide-react';
+import { Search, Download, Sparkles } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -62,8 +62,9 @@ export default function App() {
     setIsAnalyzing(true);
     
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key is missing");
+      // Vite 표준 환경변수 호출 방식으로 수정됨
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("API Key is missing. Please check Vercel Environment Variables.");
       
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -148,7 +149,13 @@ export default function App() {
               textShadow: `0 0 15px ${shadowColor}`,
             }}
           >
-            {previewText}
+            <input 
+              type="text" 
+              value={previewText} 
+              onChange={(e) => setPreviewText(e.target.value)}
+              className="bg-transparent border-none outline-none text-center w-full"
+              style={{ color: 'inherit', font: 'inherit' }}
+            />
           </div>
         </div>
 
