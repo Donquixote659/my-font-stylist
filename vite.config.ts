@@ -7,8 +7,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  server: {
-    host: '0.0.0.0',
-    port: 3000
+  // 브라우저에서 process.env 에러가 나는 것을 방지하는 설정입니다.
+  define: {
+    'process.env': {},
+  },
+  build: {
+    outDir: 'dist',
   }
 })
